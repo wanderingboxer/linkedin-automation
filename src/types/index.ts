@@ -9,7 +9,7 @@ import type {
   ContentFeedback,
   YouTubeVideo,
   YouTubeInsight,
-} from "@/generated/prisma";
+} from "@/generated/prisma/client";
 
 // ── Topic types ──
 

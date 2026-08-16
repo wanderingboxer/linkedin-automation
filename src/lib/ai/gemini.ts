@@ -67,7 +67,7 @@ export async function trackUsage(record: AIUsageRecord): Promise<void> {
         outputTokens: record.outputTokens ?? null,
         estimatedCost: record.estimatedCost ?? null,
         durationMs: record.durationMs ?? null,
-        metadata: record.metadata ?? undefined,
+        metadata: (record.metadata as any) ?? undefined,
       },
     });
   } catch (error) {

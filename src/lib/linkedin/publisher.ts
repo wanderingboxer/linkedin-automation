@@ -1,13 +1,6 @@
 const LINKEDIN_API_URL = "https://api.linkedin.com";
 
-interface LinkedInApiHeaders {
-  Authorization: string;
-  "Content-Type": string;
-  "LinkedIn-Version": string;
-  "X-Restli-Protocol-Version": string;
-}
-
-function getHeaders(accessToken: string): LinkedInApiHeaders {
+function getHeaders(accessToken: string): Record<string, string> {
   return {
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
@@ -55,7 +48,7 @@ export async function uploadImage(
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/octet-stream",
     },
-    body: imageBuffer,
+    body: new Uint8Array(imageBuffer),
   });
 
   if (!uploadResponse.ok) {
