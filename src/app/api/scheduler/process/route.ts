@@ -3,21 +3,30 @@ import { createHash } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { prisma } from "@/lib/db";
 import { createTextPost, createImagePost, uploadImage } from "@/lib/linkedin/publisher";
-import { readFile } from "fs/promises";
 
 const MAX_ATTEMPTS = 3;
 
 export async function POST(request: Request) {
+  return handleScheduler(request);
+}
+
+// Vercel Cron uses GET
+export async function GET(request: Request) {
+  return handleScheduler(request);
+}
+
+async function handleScheduler(request: Request) {
   try {
-    // Verify cron secret
-    const cronSecret = request.headers.get("x-cron-secret");
+    // Verify authorization — supports both x-cron-secret and Vercel's Authorization: Bearer
+    const cronSecret = request.headers.get("x-cron-secret")
+      || request.headers.get("authorization")?.replace("Bearer ", "");
+
     if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const now = new Date();
 
-    // Find due jobs
     const dueJobs = await prisma.scheduledJob.findMany({
       where: {
         executeAt: { lte: now },
@@ -31,7 +40,6 @@ export async function POST(request: Request) {
 
     for (const job of dueJobs) {
       try {
-        // Mark as processing
         await prisma.scheduledJob.update({
           where: { id: job.id },
           data: { attempts: job.attempts + 1 },
@@ -40,9 +48,7 @@ export async function POST(request: Request) {
         const post = await prisma.post.findUnique({
           where: { id: job.postId },
           include: {
-            user: {
-              include: { linkedinConnection: true },
-            },
+            user: { include: { linkedinConnection: true } },
             images: { where: { active: true, approved: true }, take: 1 },
           },
         });
@@ -71,14 +77,14 @@ export async function POST(request: Request) {
         if (post.approvedTextHash !== currentTextHash) {
           await prisma.scheduledJob.update({
             where: { id: job.id },
-            data: { status: "FAILED", lastError: "Text hash mismatch" },
+            data: { status: "FAILED", lastError: "Text hash mismatch — content changed after approval" },
           });
           results.push({ jobId: job.id, postId: job.postId, status: "FAILED", error: "Text hash mismatch" });
           continue;
         }
 
         const approvedImage = post.images[0];
-        if (approvedImage) {
+        if (approvedImage && post.approvedImageHash) {
           const currentImageHash = createHash("sha256").update(approvedImage.filePath).digest("hex");
           if (post.approvedImageHash !== currentImageHash) {
             await prisma.scheduledJob.update({
@@ -90,7 +96,17 @@ export async function POST(request: Request) {
           }
         }
 
-        // Publish
+        // Check idempotency — don't publish if already published
+        if (post.linkedinPostUrn) {
+          await prisma.scheduledJob.update({
+            where: { id: job.id },
+            data: { status: "COMPLETED" },
+          });
+          results.push({ jobId: job.id, postId: job.postId, status: "ALREADY_PUBLISHED" });
+          continue;
+        }
+
+        // Publish to LinkedIn
         const idempotencyKey = uuidv4();
         const attempt = await prisma.publishAttempt.create({
           data: { postId: post.id, idempotencyKey, status: "PENDING" },
@@ -98,7 +114,11 @@ export async function POST(request: Request) {
 
         let postUrn: string;
         if (approvedImage) {
-          const imageBuffer = await readFile(approvedImage.filePath);
+          const imageUrl = approvedImage.filePath;
+          const imageResponse = await fetch(
+            imageUrl.startsWith("http") ? imageUrl : `${process.env.APP_URL}${imageUrl}`
+          );
+          const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
           const imageUrn = await uploadImage(
             connection.accessToken,
             connection.memberUrn!,
@@ -148,10 +168,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({
-      processed: results.length,
-      results,
-    });
+    return NextResponse.json({ processed: results.length, results });
   } catch (error) {
     console.error("Scheduler process error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
