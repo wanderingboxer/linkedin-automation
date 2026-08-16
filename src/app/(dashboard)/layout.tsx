@@ -18,9 +18,9 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Linkedin,
   Sparkles,
   LogOut,
+  Globe,
 } from "lucide-react";
 
 const navItems = [
@@ -115,7 +115,7 @@ export default function DashboardLayout({
           <div className="flex items-center gap-3">
             {/* LinkedIn status */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border text-xs">
-              <Linkedin className="w-3.5 h-3.5 text-[#0A66C2]" />
+              <Globe className="w-3.5 h-3.5 text-[#0A66C2]" />
               <span className="text-muted-foreground">Connected</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             </div>
